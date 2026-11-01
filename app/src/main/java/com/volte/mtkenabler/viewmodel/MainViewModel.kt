@@ -1,6 +1,7 @@
 package com.volte.mtkenabler.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.volte.mtkenabler.model.DeviceInfo
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
+    private val TAG = "MainViewModel"
 
     private val rootRepository = RootRepository()
     private val deviceRepository = DeviceRepository(application)
@@ -47,8 +49,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val logMessages: StateFlow<List<String>> = _logMessages.asStateFlow()
 
     init {
-        loadDeviceInfo()
-        checkRootAccess()
+        initializeApp()
+    }
+
+    private fun initializeApp() {
+        viewModelScope.launch {
+            try {
+                addLog("جاري تهيئة التطبيق...")
+                checkRootAccess()
+                loadDeviceInfo()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error initializing app", e)
+                addLog("خطأ في تهيئة التطبيق: ${e.message}")
+            }
+        }
     }
 
     fun loadDeviceInfo() {
@@ -76,6 +90,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     addLog("تحذير: الجهاز غير مدعوم رسميًا، قد لا تعمل بعض الميزات")
                 }
             } catch (e: Exception) {
+                Log.e(TAG, "Error loading device info", e)
                 addLog("خطأ في تحميل معلومات الجهاز: ${e.message}")
             } finally {
                 _isLoading.value = false
@@ -86,17 +101,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun checkRootAccess() {
         viewModelScope.launch {
             addLog("جاري التحقق من صلاحيات Root...")
-            val rooted = rootRepository.checkRootAccess()
-            _isRooted.value = rooted
-            _deviceInfo.value = _deviceInfo.value?.copy(isRooted = rooted)
+            try {
+                val rooted = rootRepository.checkRootAccess()
+                _isRooted.value = rooted
+                _deviceInfo.value = _deviceInfo.value?.copy(isRooted = rooted)
 
-            if (rooted) {
-                addLog("✓ صلاحيات Root متاحة")
-                checkVoLTEStatus()
-                checkVoWiFiStatus()
-            } else {
-                addLog("✗ صلاحيات Root غير متاحة")
-                addLog("التطبيق يحتاج إلى صلاحيات Root للعمل")
+                if (rooted) {
+                    addLog("✓ صلاحيات Root متاحة")
+                    checkVoLTEStatus()
+                    checkVoWiFiStatus()
+                } else {
+                    addLog("✗ صلاحيات Root غير متاحة")
+                    addLog("التطبيق يحتاج إلى صلاحيات Root للعمل")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error checking root access", e)
+                addLog("خطأ في التحقق من Root: ${e.message}")
+                _isRooted.value = false
             }
         }
     }
@@ -109,8 +130,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             addLog("جاري التحقق من حالة VoLTE...")
-            _voLTEStatus.value = volteRepository.checkVoLTEStatus()
-            addLog("حالة VoLTE: ${_voLTEStatus.value}")
+            try {
+                _voLTEStatus.value = volteRepository.checkVoLTEStatus()
+                addLog("حالة VoLTE: ${_voLTEStatus.value}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error checking VoLTE status", e)
+                addLog("خطأ في التحقق من VoLTE: ${e.message}")
+                _voLTEStatus.value = VoLTEStatus.ERROR
+            }
         }
     }
 
@@ -122,8 +149,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             addLog("جاري التحقق من حالة VoWiFi...")
-            _voWiFiStatus.value = volteRepository.checkVoWiFiStatus()
-            addLog("حالة VoWiFi: ${_voWiFiStatus.value}")
+            try {
+                _voWiFiStatus.value = volteRepository.checkVoWiFiStatus()
+                addLog("حالة VoWiFi: ${_voWiFiStatus.value}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error checking VoWiFi status", e)
+                addLog("خطأ في التحقق من VoWiFi: ${e.message}")
+                _voWiFiStatus.value = VoLTEStatus.ERROR
+            }
         }
     }
 
@@ -149,20 +182,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _isLoading.value = true
             addLog("جاري تفعيل VoLTE...")
 
-            val result = volteRepository.enableVoLTE(profile, config)
-            _operationResult.value = result
+            try {
+                val result = volteRepository.enableVoLTE(profile, config)
+                _operationResult.value = result
 
-            if (result.success) {
-                addLog("✓ ${result.message}")
-                checkVoLTEStatus()
-            } else {
-                addLog("✗ ${result.message}")
-                if (result.details.isNotEmpty()) {
-                    addLog("التفاصيل: ${result.details}")
+                if (result.success) {
+                    addLog("✓ ${result.message}")
+                    checkVoLTEStatus()
+                } else {
+                    addLog("✗ ${result.message}")
+                    if (result.details.isNotEmpty()) {
+                        addLog("التفاصيل: ${result.details}")
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error enabling VoLTE", e)
+                _operationResult.value = OperationResult(
+                    success = false,
+                    message = "خطأ في تفعيل VoLTE",
+                    details = e.message ?: "Unknown error"
+                )
+                addLog("خطأ: ${e.message}")
+            } finally {
+                _isLoading.value = false
             }
-
-            _isLoading.value = false
         }
     }
 
@@ -188,20 +231,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _isLoading.value = true
             addLog("جاري تفعيل VoWiFi...")
 
-            val result = volteRepository.enableVoWiFi(profile)
-            _operationResult.value = result
+            try {
+                val result = volteRepository.enableVoWiFi(profile)
+                _operationResult.value = result
 
-            if (result.success) {
-                addLog("✓ ${result.message}")
-                checkVoWiFiStatus()
-            } else {
-                addLog("✗ ${result.message}")
-                if (result.details.isNotEmpty()) {
-                    addLog("التفاصيل: ${result.details}")
+                if (result.success) {
+                    addLog("✓ ${result.message}")
+                    checkVoWiFiStatus()
+                } else {
+                    addLog("✗ ${result.message}")
+                    if (result.details.isNotEmpty()) {
+                        addLog("التفاصيل: ${result.details}")
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error enabling VoWiFi", e)
+                _operationResult.value = OperationResult(
+                    success = false,
+                    message = "خطأ في تفعيل VoWiFi",
+                    details = e.message ?: "Unknown error"
+                )
+                addLog("خطأ: ${e.message}")
+            } finally {
+                _isLoading.value = false
             }
-
-            _isLoading.value = false
         }
     }
 
@@ -218,17 +271,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _isLoading.value = true
             addLog("جاري إلغاء تفعيل VoLTE...")
 
-            val result = volteRepository.disableVoLTE()
-            _operationResult.value = result
+            try {
+                val result = volteRepository.disableVoLTE()
+                _operationResult.value = result
 
-            if (result.success) {
-                addLog("✓ ${result.message}")
-                checkVoLTEStatus()
-            } else {
-                addLog("✗ ${result.message}")
+                if (result.success) {
+                    addLog("✓ ${result.message}")
+                    checkVoLTEStatus()
+                } else {
+                    addLog("✗ ${result.message}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error disabling VoLTE", e)
+                _operationResult.value = OperationResult(
+                    success = false,
+                    message = "خطأ في إلغاء تفعيل VoLTE",
+                    details = e.message ?: "Unknown error"
+                )
+                addLog("خطأ: ${e.message}")
+            } finally {
+                _isLoading.value = false
             }
-
-            _isLoading.value = false
         }
     }
 
@@ -254,31 +317,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _isLoading.value = true
             addLog("جاري إنشاء نسخة احتياطية...")
 
-            val backupDir = "/sdcard/MTKVoLTE_Backup"
-            val mkdirResult = rootRepository.executeSuCommand("mkdir -p $backupDir")
+            try {
+                val backupDir = "/sdcard/MTKVoLTE_Backup"
+                val mkdirResult = rootRepository.executeSuCommand("mkdir -p $backupDir")
 
-            if (mkdirResult.isSuccess) {
-                val result = volteRepository.backupBuildProp(profile, backupDir)
-                _operationResult.value = result
+                if (mkdirResult.isSuccess) {
+                    val result = volteRepository.backupBuildProp(profile, backupDir)
+                    _operationResult.value = result
 
-                if (result.success) {
-                    addLog("✓ ${result.message}")
-                    addLog("موقع النسخة الاحتياطية: $backupDir")
+                    if (result.success) {
+                        addLog("✓ ${result.message}")
+                        addLog("موقع النسخة الاحتياطية: $backupDir")
+                    } else {
+                        addLog("✗ ${result.message}")
+                    }
                 } else {
-                    addLog("✗ ${result.message}")
+                    addLog("✗ فشل إنشاء مجلد النسخ الاحتياطي")
                 }
-            } else {
-                addLog("✗ فشل إنشاء مجلد النسخ الاحتياطي")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error creating backup", e)
+                _operationResult.value = OperationResult(
+                    success = false,
+                    message = "خطأ في إنشاء النسخة الاحتياطية",
+                    details = e.message ?: "Unknown error"
+                )
+                addLog("خطأ: ${e.message}")
+            } finally {
+                _isLoading.value = false
             }
-
-            _isLoading.value = false
         }
     }
 
     private fun addLog(message: String) {
-        val timestamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
-            .format(java.util.Date())
-        _logMessages.value = _logMessages.value + "[$timestamp] $message"
+        try {
+            val timestamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
+                .format(java.util.Date())
+            _logMessages.value = _logMessages.value + "[$timestamp] $message"
+        } catch (e: Exception) {
+            Log.e(TAG, "Error adding log", e)
+        }
     }
 
     fun clearLogs() {
