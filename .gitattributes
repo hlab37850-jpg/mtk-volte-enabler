@@ -1,0 +1,7 @@
+* text=auto
+*.gradle text
+*.kotlin text
+*.xml text
+*.properties text
+*.md text
+*.yml text
