@@ -5,6 +5,13 @@ import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+data class CommandResult(
+    val isSuccess: Boolean,
+    val out: List<String>,
+    val err: List<String>,
+    val code: Int
+)
+
 class RootRepository {
     private val TAG = "RootRepository"
 
@@ -20,23 +27,25 @@ class RootRepository {
         }
     }
 
-    suspend fun executeCommand(command: String): Shell.Result = withContext(Dispatchers.IO) {
+    suspend fun executeCommand(command: String): CommandResult = withContext(Dispatchers.IO) {
         try {
             Log.d(TAG, "Executing: $command")
-            Shell.cmd(command).exec()
+            val res = Shell.cmd(command).exec()
+            CommandResult(res.isSuccess, res.out, res.err, res.code)
         } catch (e: Exception) {
             Log.e(TAG, "Command execution failed: $command", e)
-            Shell.Result(null, listOf(), listOf(e.message ?: "Unknown error"), -1, false)
+            CommandResult(false, emptyList(), listOf(e.message ?: "Unknown error"), -1)
         }
     }
 
-    suspend fun executeSuCommand(command: String): Shell.Result = withContext(Dispatchers.IO) {
+    suspend fun executeSuCommand(command: String): CommandResult = withContext(Dispatchers.IO) {
         try {
             Log.d(TAG, "Executing SU: $command")
-            Shell.su(command).exec()
+            val res = Shell.su(command).exec()
+            CommandResult(res.isSuccess, res.out, res.err, res.code)
         } catch (e: Exception) {
             Log.e(TAG, "SU command execution failed: $command", e)
-            Shell.Result(null, listOf(), listOf(e.message ?: "Unknown error"), -1, false)
+            CommandResult(false, emptyList(), listOf(e.message ?: "Unknown error"), -1)
         }
     }
 
